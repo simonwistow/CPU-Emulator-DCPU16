@@ -1,14 +1,25 @@
 package CPU::Emulator::DCPU16;
 
+use strict;
+use warnings;
+use IO::Scalar;
+
+our $VERSION       = 0.1;
+our $MAX_REGISTERS = 8;
+our $MAX_MEMORY    = 65536; # 0x10000
 =head1 NAME
 
 CPU::Emulator::DCPU16 - an emulator for Notch's DCPU-16 virtual CPU for the game 0x10c
 
 =head1 SYNOPSIS
 
+    open(my $fh, ">:raw", $file) || die "Couldn't read file $file: $!";
+    my $program = do { local $/=undef; <$fh> };
+    $program    = CPU::Emulator::DCPU16::Assembler->assemble($program) if $file =~ /\.dasm(16)?$/;  
+
     # Create a new CPU and load a file
     my $cpu = CPU::Emulator::DCPU16->new();
-    $cpu->load("sample.dasm");
+    $cpu->load($program);
     
     # Run it ...
     $cpu->run;
@@ -38,14 +49,105 @@ Create a new CPU.
 sub new {
     my $class = shift;
     my %opts  = @_;
-    my $self  = bless \%opts, $class;
-    $self->_init;
-    $self;
+    return bless \%opts, $class;
 }
 
 sub _init {
     my $self = shift;
-    $self->halt(0);
+    $self->halt = 0;
+    $self->pc   = 0;
+    $self->sp   = 0xffff;
+    $self->o    = 0;
+    $self->cost = 0;
+    
+    # TODO these could be done with scalars and bit masks
+    $self->{_registers} = [(0x0000) x $MAX_REGISTERS],
+    $self->{_memory}    = [(0x0000) x $MAX_MEMORY],
+    
+}
+
+=head2 cost
+
+The current cost for this step
+
+=cut
+sub cost : lvalue {
+    my $self = shift;
+    $self->{_cost} = shift if @_;
+    $self->{_cost};
+}
+
+=head2 pc
+
+The current program counter.
+
+=cut
+sub pc : lvalue { 
+    my $self = shift;
+    $self->{_pc} = shift if @_;
+    $self->{_pc};
+}
+
+=head2 sp
+
+The current stack pointer.
+
+=cut
+sub sp : lvalue { 
+    my $self = shift;
+    $self->{_sp} = shift if @_;
+    $self->{_sp};
+}
+
+=head2 o
+
+The current overflow.
+
+=cut
+sub o : lvalue { 
+    my $self = shift;
+    $self->{_o} = shift if @_;
+    $self->{_o};
+}
+
+=head2 register <location>
+
+Get or set the value of a register.
+
+=cut
+sub register : lvalue {
+    my $self = shift;
+    return $self->{_registers} unless @_;
+    my $loc  = shift; die "Invalid register $loc at pc ".$self->pc." (".sprintf("%02x", $self->pc).")\n" if $loc<0 || $loc>=$MAX_REGISTERS;
+    $self->{_registers}[$loc] = shift if @_;
+    $self->{_registers}[$loc];
+}
+# TODO ugly
+sub _reg_ref {
+    my $self = shift;
+    my $loc  = shift; die "Invalid register $loc at pc ".$self->pc." (".sprintf("%02x", $self->pc).")\n" if $loc<0 || $loc>=$MAX_REGISTERS;
+    \($self->{_registers}[$loc]);
+}
+
+=head2 memory <location>
+
+Get or set the value of a memory location.
+
+=cut
+sub memory : lvalue {
+    my $self = shift;
+    return $self->{_memory} unless @_;
+    my $loc  = shift; 
+    die "Invalid memory $loc at pc ".$self->pc." (".sprintf("%02x", $self->pc).")\n" if $loc<0 || $loc>=$MAX_MEMORY;
+    $self->{_memory}[$loc] = shift if @_;
+    $self->{_memory}[$loc];
+}
+# TODO ugly
+sub _mem_ref {
+    my $self = shift;
+    my $loc  = shift; 
+    die "Invalid memory $loc at pc ".$self->pc." (".sprintf("%02x", $self->pc).")\n" if $loc<0 || $loc>=$MAX_MEMORY;
+    \($self->{_memory}[$loc]);
 }
 
 
@@ -69,8 +171,7 @@ Default is 0 (no debug output).
 sub run {
     my $self = shift;
     my %opts = @_;
-    do { $self->step(%opts) } until $self->halt;
-    return !$self->halt(0);
+    $self->step(%opts) until $self->halt;
 }
 
 =head2 halt [halt state]
@@ -78,15 +179,32 @@ sub run {
 Halt the CPU or check to see whether it's halted.
 
 =cut
-sub halt {
+sub halt : lvalue {
     my $self = shift;
     $self->{_halt} = shift if @_;
     $self->{_halt};
 }
 
-=head1 load <file>
+=head2 load <file>
 
+Load a C<.dsm> file.
 
+=cut
+use IO::Scalar;
+use IO::String;
+use File::Binary;
+sub load {
+    my $self  = shift;
+    my $bytes = shift; 
+    my $idx   = 0;
+    $self->_init;
+    while (my $word = substr($bytes, 0, 2, '')) {
+        $self->{_memory}[$idx++] = ord($word) * 2**8 + ord(substr($word, 1, 1));
+    }
+    die "No program was loaded\n" unless $idx;
+    #die join " ", map { sprintf("%04X", $_) } @{$self->memory};
+    return 1;
+}
 
 =head2 step [opt[s]]
 
@@ -98,6 +216,224 @@ Takes the same options as C<run>.
 sub step {
     my $self = shift;
     my %opts = @_;
+    
+    $opts{debug} ||= 0;
+    
+    my $pc   = $self->pc;
+    my $word = $self->memory($self->pc);
+    my $op   = $word & 0x0F; 
+    my $a    = ($word >> 4) & 0x3f;
+    my $b    = ($word >> 10) & 0x3f;
+
+    $self->_debug(sprintf "PC=%04X SP=%d W=%04X O=%04X A=%02X B=%02X", $self->pc, $self->sp, $word, $op, $a, $b) if $opts{debug}>=1;
+    $self->pc  += 1;
+    $self->cost = 0;
+    $self->o    = 0;
+    
+    my $meth;
+    # Basic opcodes
+    if ($op) {
+        $meth = qw(_NOOP _SET _ADD _SUB _MUL _DIV _MOD _SHL _SHR _AND _BOR _XOR _IFE _IFN _IFG _IFB)[$op];
+        die "Illegal opcode $op" unless $meth;   
+    # Defined non-basic opcodes
+    } elsif ($a == 0x01) {
+        $meth = "_JSR";
+    # Reserved non-basic opcodes
+    } else {
+        $meth = "_NOOP";
+    }
+
+    my $aa = $self->_get_value($a);
+    my $bb = $self->_get_value($b);
+    
+    $self->_debug("\tOp=$meth ".sprintf("A=%d (0x%02x)", $$aa, $$aa)." ".sprintf("B=%d (0x%02x)", $$bb, $$bb));
+    $self->$meth($aa, $bb);
+    $self->_debug("\tOp: $meth. Cost was ".$self->cost) if $opts{debug}>=2;
+    $self->_debug("\t   A    B    C    X    Y    Z    I    J") if $opts{debug}>=2;
+    $self->_debug("\t".join " ", map { sprintf "%04x", $_} @{$self->register}) if $opts{debug}>=2;
+    $self->_debug("\t Mem=".$self->memory(0x1000));
+}
+
+sub _debug {
+    my $self = shift;
+    my $mess = shift;
+    print "$mess\n";
+}
+
+sub _get_value {
+    my $self  = shift;
+    my $value = shift;
+    my $ret;
+    if ($value < 0x08) {
+        $ret = $self->_reg_ref($value);
+    } elsif ($value < 0x10) {
+        $ret = $self->_mem_ref($self->register($value & 7));
+    } elsif ($value < 0x18) {
+        $self->cost += 1;
+        my $next = $self->memory($self->pc++);
+        $ret = $self->_mem_ref($next + $self->register($value & 7) & 0xffff);
+    } elsif ($value == 0x18) {
+        $ret = $self->_mem_ref($self->sp++);
+    } elsif ($value == 0x19) {
+        $ret = $self->_mem_ref($self->sp);
+    } elsif ($value == 0x1A) {
+        $ret = $self->_mem_ref($self->sp--);
+    } elsif ($value == 0x1B) {
+        $ret = \($self->{_sp});
+    } elsif ($value == 0x1C) {
+        $ret = \($self->{_pc});
+    } elsif ($value == 0x1D) {
+        $ret = \($self->{_o});
+    } elsif ($value == 0x1E) {
+        $self->cost += 1;
+        $ret = $self->_mem_ref($self->memory($self->pc++));
+    } elsif ($value == 0x1F) {
+        $self->cost += 1;
+        $ret = $self->_mem_ref($self->pc++);
+    } else {
+        $ret = ($value - 0x20)
+    }
+    return ref($ret) ? $ret : \$ret;
+}
+
+our %_skiptable = (0x10 => 1, 0x11 => 1, 0x12 => 1, 0x13 => 1, 0x14 => 1, 0x15 => 1, 0x1E => 1, 0x1F => 1);
+sub _skip {
+    my $self = shift;
+    $self->cost++;
+    my $op   = $self->memory($self->pc++);
+    $self->pc += $_skiptable{$op  >> 10};
+    $self->pc += $_skiptable{($op >> 4) & 31} if (($op & 0x0F) == 0);
+}
+
+sub _NOOP {
+    # Just what it says on the tin
+}
+
+sub _JSR {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;   
+    $self->memory(--$self->sp) = $self->pc;
+    $self->pc = $$b;
+
+}
+
+# 0x1: SET a, b - sets a to b
+sub _SET {
+    my ($self, $a, $b) = @_;
+    $self->cost += 1; 
+    $$a = $$b;   
+}
+
+# 0x2: ADD a, b - sets a to a+b, sets O to 0x0001 if there's an overflow, 0x0 otherwise
+sub _ADD {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;    
+    $$a += $$b;
+    $self->o = $$a >> 16;
+}
+
+# 0x3: SUB a, b - sets a to a-b, sets O to 0xffff if there's an underflow, 0x0 otherwise
+sub _SUB {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;    
+    $$a -= $$b;
+    $self->o = $$a >> 16;
+}
+
+# 0x4: MUL a, b - sets a to a*b, sets O to ((a*b)>>16)&0xffff
+sub _MUL {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;
+    $$a *= $$b;
+    $self->o = $$a >> 16;     
+}
+
+# 0x5: DIV a, b - sets a to a/b, sets O to ((a<<16)/b)&0xffff. if b==0, sets a and O to 0 instead.
+sub _DIV {
+    my ($self, $a, $b) = @_;
+    $self->cost += 3;
+    if ($$b) {
+        $$a /= $$b;
+    } else {
+        $$a = 0;
+    }
+    $self->o = $$a >> 16;
+}
+
+# 0x6: MOD a, b - sets a to a%b. if b==0, sets a to 0 instead.
+sub _MOD {
+    my ($self, $a, $b) = @_;
+    $self->cost += 3;
+    if ($$b) {
+        $$a %= $$b;
+    } else {
+        $$a = 0;
+    }
+}
+
+# 0x7: SHL a, b - sets a to a<<b, sets O to ((a<<b)>>16)&0xffff
+sub _SHL {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;
+    $$a <<= $$b;
+    $self->o = $$a >> 16;    
+}
+
+# 0x8: SHR a, b - sets a to a>>b, sets O to ((a<<16)>>b)&0xffff
+sub _SHR {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;    
+    $$a >>= $$b;
+    $self->o = $$a >> 16;
+}
+
+# 0x9: AND a, b - sets a to a&b
+sub _AND {
+    my ($self, $a, $b) = @_;
+    $self->cost += 1;    
+    $$a &= $$b;
+}
+
+# 0xa: BOR a, b - sets a to a|b
+sub _BOR {
+    my ($self, $a, $b) = @_;
+    $self->cost += 1;
+    $$a |= $b;
+}
+
+# 0xb: XOR a, b - sets a to a^b
+sub _XOR {
+    my ($self, $a, $b) = @_;
+    $self->cost += 1; 
+    $$a ^= $b;   
+}
+
+# 0xc: IFE a, b - performs next instruction only if a==b
+sub _IFE {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;    
+    $self->_skip unless $$a+0 == $$b+0;
+}
+
+# 0xd: IFN a, b - performs next instruction only if a!=b
+sub _IFN {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2; 
+    $self->_skip unless $$a+0 != $$b+0;
+}
+
+# 0xe: IFG a, b - performs next instruction only if a>b
+sub _IFG {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;   
+    $self->_skip unless $$a+0 > $$b+0;
+}
+
+# 0xf: IFB a, b - performs next instruction only if (a&b)!=0
+sub _IFB {
+    my ($self, $a, $b) = @_;
+    $self->cost += 2;   
+    $self->_skip unless ($$a+0 & $$b+0) != 0; 
 }
 
 =head1 SEE ALSO

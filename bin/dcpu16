@@ -1,0 +1,23 @@
+#!perl 
+
+use strict;
+use warnings;
+use CPU::Emulator::DCPU16;
+use CPU::Emulator::DCPU16::Assembler;
+
+my $file    = shift || die "You must pass in a object file";
+
+open(my $fh, "<", $file) || die "Couldn't read file $file: $!";
+my $program = do { local $/=undef; <$fh> };
+close($fh);
+
+#$program    = CPU::Emulator::DCPU16::Assembler->assemble($program) if $file =~ /\.dasm(16)?$/;  
+
+# Create a new CPU and load a file
+my $cpu = CPU::Emulator::DCPU16->new();
+$cpu->load($program);
+
+# Run it ...
+$cpu->run(debug => 5);
+# ... which is basically the same as
+#do { $cpu->step } until $cpu->halt;
