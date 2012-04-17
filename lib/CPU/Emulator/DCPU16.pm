@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use IO::Scalar;
 
+use CPU::Emulator::DCPU16::Disassembler;
+
 our $VERSION       = 0.1;
 our $MAX_REGISTERS = 8;
 our $MAX_MEMORY    = 65536; # 0x10000
@@ -171,6 +173,7 @@ Default is 0 (no debug output).
 sub run {
     my $self = shift;
     my %opts = @_;
+    $self->_debug($self->_dump_header) if $opts{debug}>=1;
     $self->step(%opts) until $self->halt;
 }
 
@@ -218,6 +221,8 @@ sub step {
     my %opts = @_;
     
     $opts{debug} ||= 0;
+    $self->_debug($self->_dump_state) if $opts{debug}>=1;
+  
     
     my $pc   = $self->pc;
     my $word = $self->memory($self->pc);
@@ -225,7 +230,7 @@ sub step {
     my $a    = ($word >> 4) & 0x3f;
     my $b    = ($word >> 10) & 0x3f;
 
-    $self->_debug(sprintf "PC=%04X SP=%d W=%04X O=%04X A=%02X B=%02X", $self->pc, $self->sp, $word, $op, $a, $b) if $opts{debug}>=1;
+    #$self->_debug(sprintf "PC=%04X SP=%d W=%04X O=%04X A=%02X B=%02X", $self->pc, $self->sp, $word, $op, $a, $b) if $opts{debug}>=1;
     $self->pc  += 1;
     $self->cost = 0;
     $self->o    = 0;
@@ -246,12 +251,29 @@ sub step {
     my $aa = $self->_get_value($a);
     my $bb = $self->_get_value($b);
     
-    $self->_debug("\tOp=$meth ".sprintf("A=%d (0x%02x)", $$aa, $$aa)." ".sprintf("B=%d (0x%02x)", $$bb, $$bb));
+    
+    
+    #$self->_debug("\tOp=$meth ".sprintf("A=%d (0x%02x)", $$aa, $$aa)." ".sprintf("B=%d (0x%02x)", $$bb, $$bb));
     $self->$meth($aa, $bb);
-    $self->_debug("\tOp: $meth. Cost was ".$self->cost) if $opts{debug}>=2;
-    $self->_debug("\t   A    B    C    X    Y    Z    I    J") if $opts{debug}>=2;
-    $self->_debug("\t".join " ", map { sprintf "%04x", $_} @{$self->register}) if $opts{debug}>=2;
-    $self->_debug("\t Mem=".$self->memory(0x1000));
+    #$self->_debug("\tOp: $meth. Cost was ".$self->cost) if $opts{debug}>=2;
+    #$self->_debug("\t   A    B    C    X    Y    Z    I    J") if $opts{debug}>=2;
+    #$self->_debug("\t".join " ", map { sprintf "%04x", $_} @{$self->register}) if $opts{debug}>=2;
+    #$self->_debug("\t Mem=".$self->memory(0x1000));
+    last if $self->{_count}++ > 120;
+}
+
+sub _dump_header {
+    "PC   SP   OV   A    B    C    X    Y    Z    I    J    Instruction\n".
+    "---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- -----------";
+}
+
+sub _dump_state {
+    my $self = shift;
+    sprintf("%04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %s",
+        $self->pc, $self->sp, $self->o, 
+        $self->register(0), $self->register(1), $self->register(2), $self->register(3),
+        $self->register(4), $self->register(5), $self->register(6), $self->register(7),
+        CPU::Emulator::DCPU16::Disassembler->disassemble($self->pc, @{$self->memory}));
 }
 
 sub _debug {
