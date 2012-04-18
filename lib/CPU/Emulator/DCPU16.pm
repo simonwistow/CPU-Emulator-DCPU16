@@ -199,6 +199,7 @@ use File::Binary;
 sub load {
     my $self  = shift;
     my $bytes = shift; 
+    $self     = $self->new unless ref($self);
     $self->_init;
     $self->{_memory} = [$self->bytes_to_array($bytes)];
     die "No program was loaded\n" unless @{$self->{_memory}};
@@ -241,7 +242,6 @@ sub step {
     my $a    = ($word >> 4) & 0x3f;
     my $b    = ($word >> 10) & 0x3f;
 
-    #$self->_debug(sprintf "PC=%04X SP=%d W=%04X O=%04X A=%02X B=%02X", $self->pc, $self->sp, $word, $op, $a, $b) if $opts{debug}>=1;
     $self->pc  += 1;
     $self->cost = 0;
     $self->o    = 0;
@@ -264,13 +264,8 @@ sub step {
     
     
     
-    #$self->_debug("\tOp=$meth ".sprintf("A=%d (0x%02x)", $$aa, $$aa)." ".sprintf("B=%d (0x%02x)", $$bb, $$bb));
     $self->$meth($aa, $bb);
-    #$self->_debug("\tOp: $meth. Cost was ".$self->cost) if $opts{debug}>=2;
-    #$self->_debug("\t   A    B    C    X    Y    Z    I    J") if $opts{debug}>=2;
-    #$self->_debug("\t".join " ", map { sprintf "%04x", $_} @{$self->register}) if $opts{debug}>=2;
-    #$self->_debug("\t Mem=".$self->memory(0x1000));
-    last if $self->{_count}++ > 120;
+    # TODO implement sleeping based on cost
 }
 
 sub _dump_header {
