@@ -86,7 +86,7 @@ sub disassemble {
 Given an scalar containing program bytecode will return a string representing the assembler.
 
 =cut
-our $CODE_INDENT = 8;
+our $CODE_INDENT = 10;
 sub dump {
     my $class = shift;
     my $bytes = shift;
@@ -96,22 +96,23 @@ sub dump {
     my %labels = ();
     my %lines  = ();
     
-    foreach my $word (@words) {
+    while ($pc < scalar(@words)) {
         my ($tmp, $new_pc) = $class->disassemble($pc, @words);
         if ($tmp =~ /^(JSR|SET PC,)\s*(.+)$/) {
             my $addr = "$2";
+            # TODO potentially replace faux address labels with generated ones
             $labels{hex($addr)} = $addr if $addr =~ /^0x/; 
         }
         $lines{$pc} = $tmp;
         $pc         = $new_pc;
     }
-    
     my $indent = 0;
     my $ret    = "";
     foreach $pc (sort { $a <=> $b } keys %lines) {
         my $line = $lines{$pc};
+        #$ret .= sprintf "%d (0x%04x) ", $pc, $pc;
         if ($labels{$pc}) {
-            $ret .= $labels{$pc} . ": " x ($CODE_INDENT-length($labels{$pc})-1);
+            $ret .= $labels{$pc} . ": " ." "x ($CODE_INDENT-length($labels{$pc})-2);
         } else {
             $ret .= " "x$CODE_INDENT;
         }
