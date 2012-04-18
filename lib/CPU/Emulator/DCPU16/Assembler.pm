@@ -67,6 +67,7 @@ sub _parse_line {
     my $labels = shift;
     my $unres  = shift;
     my $off    = length($$bytes)/2;
+    my $oc;
 
     # trim and clean the line
     $line =~ s!(^\s*|\s*$|;.*$)!!g;
@@ -86,7 +87,7 @@ sub _parse_line {
     $labels->{$label} = $off if defined $label;
     
     $op = uc $op;
-    if (my $oc = $_EXTENDED_OPS{$op}) {
+    if ($oc = $_EXTENDED_OPS{$op}) {
         die "$op takes one operand at line $idx: $line\n" unless defined $a && !defined $b;
         my ($val, $next_word, $label) = _parse_operand($a);
         die "Can't parse operand '$a' at line $idx: $line\n" unless defined $val;
@@ -98,7 +99,7 @@ sub _parse_line {
         $$bytes .= pack("S>", $oc);
         $$bytes .= pack("S>", $next_word) if defined $next_word;
 
-    } elsif (my $oc = $_OPS{$op}) {
+    } elsif ($oc = $_OPS{$op}) {
          die "$op takes two operands at line $idx: $line\n" unless defined $a && defined $b;
        
          my ($val_a, $next_word_a, $label_a) = _parse_operand($a);
