@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use IO::Scalar;
 
+use CPU::Emulator::DCPU16::Assembler;
 use CPU::Emulator::DCPU16::Disassembler;
 
 our $VERSION       = 0.1;
@@ -171,10 +172,17 @@ Default is 0 (no debug output).
 
 =cut
 sub run {
-    my $self = shift;
-    my %opts = @_;
+    my $self       = shift;
+    my %opts       = @_;
+    my $count      = 1;
+    $opts{limit} ||= 0;
+    
     $self->_debug($self->_dump_header) if $opts{debug}>=1;
-    $self->step(%opts) until $self->halt;
+    
+    do { 
+        $self->step(%opts);
+        $self->halt = 1 if $opts{limit}>0 and ++$count>$opts{limit};
+    } until $self->halt;
 }
 
 =head2 halt [halt state]
@@ -193,9 +201,6 @@ sub halt : lvalue {
 Load a C<.dsm> file.
 
 =cut
-use IO::Scalar;
-use IO::String;
-use File::Binary;
 sub load {
     my $self  = shift;
     my $bytes = shift; 
@@ -203,7 +208,7 @@ sub load {
     $self->_init;
     $self->{_memory} = [$self->bytes_to_array($bytes)];
     die "No program was loaded\n" unless @{$self->{_memory}};
-    return 1;
+    return $self;
 }
 
 =head2 bytes_to_array <bytes>
