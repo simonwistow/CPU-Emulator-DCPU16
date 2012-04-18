@@ -199,14 +199,25 @@ use File::Binary;
 sub load {
     my $self  = shift;
     my $bytes = shift; 
-    my $idx   = 0;
     $self->_init;
-    while (my $word = substr($bytes, 0, 2, '')) {
-        $self->{_memory}[$idx++] = ord($word) * 2**8 + ord(substr($word, 1, 1));
-    }
-    die "No program was loaded\n" unless $idx;
-    #die join " ", map { sprintf("%04X", $_) } @{$self->memory};
+    $self->{_memory} = [$self->bytes_to_array($bytes)];
+    die "No program was loaded\n" unless @{$self->{_memory}};
     return 1;
+}
+
+=head2 bytes_to_array <bytes>
+
+Turn a scalar of bytes into an array of words
+
+=cut
+sub bytes_to_array {
+    my $class = shift;
+    my $bytes = shift;
+    my @ret;
+    while (my $word = substr($bytes, 0, 2, '')) {
+        push @ret, ord($word) * 2**8 + ord(substr($word, 1, 1));
+    }
+    @ret;
 }
 
 =head2 step [opt[s]]
@@ -457,6 +468,7 @@ sub _IFB {
     $self->cost += 2;   
     $self->_skip unless ($$a+0 & $$b+0) != 0; 
 }
+
 
 =head1 SEE ALSO
 
