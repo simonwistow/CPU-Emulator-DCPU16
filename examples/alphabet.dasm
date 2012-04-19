@@ -5,5 +5,5 @@
               ADD C, A       ; SET up the offset into the console device
               SET [C], B     ; SET the memory in the console device
               ADD A, 1       ; Increment A
-              IFN B, 0x74    ; Check to see if we've gone past chr ~ 
+              IFN B, 0x7e    ; Check to see if we've gone past chr ~ 
                  SET PC, loop

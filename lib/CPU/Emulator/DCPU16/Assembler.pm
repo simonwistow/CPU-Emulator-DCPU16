@@ -130,7 +130,7 @@ sub _parse_num {
 sub _parse_operand {
     my $op   = shift;
     my $regs = "ABCXYZIJ";
-    my $nums = qr/(?:0[xb])?[0-9]+/i;
+    my $nums = qr/(?:0x[0-9A-F]+)/i;
 
     if (0<=index $regs, $op) {
         return (index $regs, $op);
@@ -156,9 +156,9 @@ sub _parse_operand {
         my $num = _parse_num($1);
         return ($num < 0x20) ? (0x20 + $num) : (0x1f, $num);
     } elsif ($op =~ /\w+/) {
-      return (0x1f, 0x00, $op);
+        return (0x1f, 0x00, $op);
     } else {
-      return ();
+        return ();
     }
 }
 
