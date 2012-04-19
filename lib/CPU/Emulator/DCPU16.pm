@@ -2,7 +2,6 @@ package CPU::Emulator::DCPU16;
 
 use strict;
 use warnings;
-use IO::Scalar;
 
 use CPU::Emulator::DCPU16::Assembler;
 use CPU::Emulator::DCPU16::Disassembler;
