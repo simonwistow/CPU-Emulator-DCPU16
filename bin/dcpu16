@@ -70,8 +70,8 @@ close($fh);
 
 $program    = CPU::Emulator::DCPU16::Assembler->assemble($program) if $file =~ /\.dasm(16)?$/ || $assemble;  
 
-print CPU::Emulator::DCPU16::Disassembler->dump($program) && exit(0) if $disassemble;
-print $program                                            && exit(0) if $assemble;
+do { print CPU::Emulator::DCPU16::Disassembler->dump($program); exit(0) } if $disassemble;
+do { print $program;                                            exit(0) } if $assemble;
 
 # Create a new CPU and load a file
 my $cpu = CPU::Emulator::DCPU16->load($program);
