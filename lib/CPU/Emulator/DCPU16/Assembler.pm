@@ -123,21 +123,21 @@ sub _parse_line {
 
 sub _parse_num {
     my $num = shift;
-    $num    = oct($num) if $num =~ /^0x/;
+    $num    = oct($num) if $num =~ /^0x/i;
     $num;
 }
 
 sub _parse_operand {
     my $op   = shift;
     my $regs = "ABCXYZIJ";
-    my $nums = qr/(?:0[xb])?[0-9]+/;
+    my $nums = qr/(?:0[xb])?[0-9]+/i;
 
     if (0<=index $regs, $op) {
         return (index $regs, $op);
     } elsif ($op =~ /^\[\s*([$regs])\s*\]$/) {
-        return (0x08 + index $regs, $1);
+        return (0x08 + index $regs, uc($1));
     } elsif ($op =~ /^\[\s*($nums)\s*\+\s*([$regs])\s*\]$/) {
-        return (0x10 + index($regs, $2), _parse_num($1));
+        return (0x10 + index($regs, uc($2)), _parse_num($1));
     } elsif ($op eq 'POP') {
         return (0x18);
     } elsif ($op eq 'PEEK' || $op =~ /^\[\s*SP\s*\]$/) {
