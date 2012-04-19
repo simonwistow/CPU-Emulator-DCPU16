@@ -112,7 +112,7 @@ sub dump {
         my $line = $lines{$pc};
         #$ret .= sprintf "%d (0x%04x) ", $pc, $pc;
         if ($labels{$pc}) {
-            $ret .= $labels{$pc} . ": " ." "x ($CODE_INDENT-length($labels{$pc})-2);
+            $ret .= ":".$labels{$pc} . " " ." "x ($CODE_INDENT-length($labels{$pc})-2);
         } else {
             $ret .= " "x$CODE_INDENT;
         }
