@@ -10,6 +10,7 @@ use CPU::Emulator::DCPU16::Disassembler;
 our $VERSION       = 0.1;
 our $MAX_REGISTERS = 8;
 our $MAX_MEMORY    = 65536; # 0x10000
+
 =head1 NAME
 
 CPU::Emulator::DCPU16 - an emulator for Notch's DCPU-16 virtual CPU for the game 0x10c
@@ -61,7 +62,6 @@ sub _init {
     $self->pc   = 0;
     $self->sp   = 0xffff;
     $self->o    = 0;
-    $self->cost = 0;
     
     # TODO these could be done with scalars and bit masks
     $self->{_registers} = [(0x0000) x $MAX_REGISTERS],
@@ -168,6 +168,18 @@ Whether or not we should print debug information and at what level.
 
 Default is 0 (no debug output).
 
+=item limit
+
+Maxinum number of instructions to execute.
+
+Default is 0 (no limit).
+
+=item cycle_penalty
+
+The time penalty for each instruction cycle in milliseconds.
+
+Default is 0 (no penalty);
+
 =back
 
 =cut
@@ -198,16 +210,18 @@ sub halt : lvalue {
 
 =head2 load <file>
 
-Load a C<.dsm> file.
+Load an object file.
 
 =cut
 sub load {
     my $self  = shift;
     my $bytes = shift; 
-    $self     = $self->new unless ref($self);
+    my %opts  = @_;
+    $self     = $self->new(%opts) unless ref($self);
     $self->_init;
-    $self->{_memory} = [$self->bytes_to_array($bytes)];
-    die "No program was loaded\n" unless @{$self->{_memory}};
+    my @bytes = $self->bytes_to_array($bytes);
+    die "No program was loaded\n" unless @bytes;
+    splice(@{$self->{_memory}}, 0, scalar(@bytes), @bytes);
     return $self;
 }
 
@@ -237,40 +251,41 @@ sub step {
     my $self = shift;
     my %opts = @_;
     
-    $opts{debug} ||= 0;
+    $opts{debug}         ||= 0;
+    $opts{cycle_penalty} ||= 0;
     $self->_debug($self->_dump_state) if $opts{debug}>=1;
   
-    
     my $pc   = $self->pc;
     my $word = $self->memory($self->pc);
+    die "Unknown memory at PC ".sprintf("0x%04x",$self->pc)."\n" unless defined $word;
     my $op   = $word & 0x0F; 
     my $a    = ($word >> 4) & 0x3f;
     my $b    = ($word >> 10) & 0x3f;
 
     $self->pc  += 1;
-    $self->cost = 0;
     $self->o    = 0;
+    
+    my $cost = 0;
     
     my $meth;
     # Basic opcodes
     if ($op) {
-        $meth = qw(_NOOP _SET _ADD _SUB _MUL _DIV _MOD _SHL _SHR _AND _BOR _XOR _IFE _IFN _IFG _IFB)[$op];
-        die "Illegal opcode $op" unless $meth;   
+        $meth = qw(NOOP _SET _ADD _SUB _MUL _DIV _MOD _SHL _SHR _AND _BOR _XOR _IFE _IFN _IFG _IFB)[$op];
+        die "Illegal opcode $op\n" unless defined $meth;   
     # Defined non-basic opcodes
     } elsif ($a == 0x01) {
         $meth = "_JSR";
     # Reserved non-basic opcodes
     } else {
-        $meth = "_NOOP";
+        die "Illegal extended opcode $a\n";
     }
 
-    my $aa = $self->_get_value($a);
-    my $bb = $self->_get_value($b);
+    my $aa = $self->_get_value($a, \$cost);
+    my $bb = $self->_get_value($b, \$cost);
     
-    
-    
-    $self->$meth($aa, $bb);
-    # TODO implement sleeping based on cost
+    $self->$meth($aa, $bb, \$cost);
+    select(undef, undef, undef, $cost*$opts{cycle_penalty}/1000) if $opts{cycle_penalty}>0;
+    return $cost;
 }
 
 sub _dump_header {
@@ -296,13 +311,14 @@ sub _debug {
 sub _get_value {
     my $self  = shift;
     my $value = shift;
+    my $cost  = shift;
     my $ret;
     if ($value < 0x08) {
         $ret = $self->_reg_ref($value);
     } elsif ($value < 0x10) {
         $ret = $self->_mem_ref($self->register($value & 7));
     } elsif ($value < 0x18) {
-        $self->cost += 1;
+        $$cost += 1;
         my $next = $self->memory($self->pc++);
         $ret = $self->_mem_ref($next + $self->register($value & 7) & 0xffff);
     } elsif ($value == 0x18) {
@@ -318,10 +334,10 @@ sub _get_value {
     } elsif ($value == 0x1D) {
         $ret = \($self->{_o});
     } elsif ($value == 0x1E) {
-        $self->cost += 1;
+        $$cost += 1;
         $ret = $self->_mem_ref($self->memory($self->pc++));
     } elsif ($value == 0x1F) {
-        $self->cost += 1;
+        $$cost += 1;
         $ret = $self->_mem_ref($self->pc++);
     } else {
         $ret = ($value - 0x20)
@@ -332,7 +348,8 @@ sub _get_value {
 our %_skiptable = (0x10 => 1, 0x11 => 1, 0x12 => 1, 0x13 => 1, 0x14 => 1, 0x15 => 1, 0x1E => 1, 0x1F => 1);
 sub _skip {
     my $self = shift;
-    $self->cost++;
+    my $cost = shift;
+    $$cost++;
     my $op   = $self->memory($self->pc++);
     $self->pc += $_skiptable{$op  >> 10};
     $self->pc += $_skiptable{($op >> 4) & 31} if (($op & 0x0F) == 0);
@@ -343,8 +360,8 @@ sub _NOOP {
 }
 
 sub _JSR {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;   
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;   
     $self->memory(--$self->sp) = $self->pc;
     $self->pc = $$b;
 
@@ -352,39 +369,39 @@ sub _JSR {
 
 # 0x1: SET a, b - sets a to b
 sub _SET {
-    my ($self, $a, $b) = @_;
-    $self->cost += 1; 
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 1; 
     $$a = $$b;   
 }
 
 # 0x2: ADD a, b - sets a to a+b, sets O to 0x0001 if there's an overflow, 0x0 otherwise
 sub _ADD {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;    
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;    
     $$a += $$b;
     $self->o = $$a >> 16;
 }
 
 # 0x3: SUB a, b - sets a to a-b, sets O to 0xffff if there's an underflow, 0x0 otherwise
 sub _SUB {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;    
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;    
     $$a -= $$b;
     $self->o = $$a >> 16;
 }
 
 # 0x4: MUL a, b - sets a to a*b, sets O to ((a*b)>>16)&0xffff
 sub _MUL {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;
     $$a *= $$b;
     $self->o = $$a >> 16;     
 }
 
 # 0x5: DIV a, b - sets a to a/b, sets O to ((a<<16)/b)&0xffff. if b==0, sets a and O to 0 instead.
 sub _DIV {
-    my ($self, $a, $b) = @_;
-    $self->cost += 3;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 3;
     if ($$b) {
         $$a /= $$b;
     } else {
@@ -395,8 +412,8 @@ sub _DIV {
 
 # 0x6: MOD a, b - sets a to a%b. if b==0, sets a to 0 instead.
 sub _MOD {
-    my ($self, $a, $b) = @_;
-    $self->cost += 3;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 3;
     if ($$b) {
         $$a %= $$b;
     } else {
@@ -406,67 +423,67 @@ sub _MOD {
 
 # 0x7: SHL a, b - sets a to a<<b, sets O to ((a<<b)>>16)&0xffff
 sub _SHL {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;
     $$a <<= $$b;
     $self->o = $$a >> 16;    
 }
 
 # 0x8: SHR a, b - sets a to a>>b, sets O to ((a<<16)>>b)&0xffff
 sub _SHR {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;    
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;    
     $$a >>= $$b;
     $self->o = $$a >> 16;
 }
 
 # 0x9: AND a, b - sets a to a&b
 sub _AND {
-    my ($self, $a, $b) = @_;
-    $self->cost += 1;    
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 1;    
     $$a &= $$b;
 }
 
 # 0xa: BOR a, b - sets a to a|b
 sub _BOR {
-    my ($self, $a, $b) = @_;
-    $self->cost += 1;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 1;
     $$a |= $b;
 }
 
 # 0xb: XOR a, b - sets a to a^b
 sub _XOR {
-    my ($self, $a, $b) = @_;
-    $self->cost += 1; 
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 1; 
     $$a ^= $b;   
 }
 
 # 0xc: IFE a, b - performs next instruction only if a==b
 sub _IFE {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;    
-    $self->_skip unless $$a+0 == $$b+0;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;    
+    $self->_skip($cost) unless $$a+0 == $$b+0;
 }
 
 # 0xd: IFN a, b - performs next instruction only if a!=b
 sub _IFN {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2; 
-    $self->_skip unless $$a+0 != $$b+0;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2; 
+    $self->_skip($cost) unless $$a+0 != $$b+0;
 }
 
 # 0xe: IFG a, b - performs next instruction only if a>b
 sub _IFG {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;   
-    $self->_skip unless $$a+0 > $$b+0;
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;   
+    $self->_skip($cost) unless $$a+0 > $$b+0;
 }
 
 # 0xf: IFB a, b - performs next instruction only if (a&b)!=0
 sub _IFB {
-    my ($self, $a, $b) = @_;
-    $self->cost += 2;   
-    $self->_skip unless ($$a+0 & $$b+0) != 0; 
+    my ($self, $a, $b, $cost) = @_;
+    $$cost += 2;   
+    $self->_skip($cost) unless ($$a+0 & $$b+0) != 0; 
 }
 
 
