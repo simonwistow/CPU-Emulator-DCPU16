@@ -113,6 +113,17 @@ sub o : lvalue {
     $self->{_o};
 }
 
+=head2 program_top
+
+The address of the first memory location after the loaded program.
+
+=cut
+sub program_top : lvalue { 
+    my $self = shift;
+    $self->{_program_top} = shift if @_;
+    $self->{_program_top};
+}
+
 =head2 register <location>
 
 Get or set the value of a register.
@@ -178,7 +189,15 @@ Default is 0 (no limit).
 
 The time penalty for each instruction cycle in milliseconds.
 
-Default is 0 (no penalty);
+Default is 0 (no penalty)
+
+=item full_memory
+
+Allow the PC to continue past the last instruction of the program (i.e the program_top). 
+
+This would allow programs to rewrite themselves into a larger program.
+
+Default is 0 (no access)
 
 =back
 
@@ -194,6 +213,7 @@ sub run {
     do { 
         $self->step(%opts);
         $self->halt = 1 if $opts{limit}>0 and ++$count>$opts{limit};
+        $self->halt = 1 if $self->pc >= $self->program_top && !$opts{full_memory};
     } until $self->halt;
 }
 
@@ -221,6 +241,7 @@ sub load {
     $self->_init;
     my @bytes = $self->bytes_to_array($bytes);
     die "No program was loaded\n" unless @bytes;
+    $self->{_program_top} = scalar(@bytes);
     splice(@{$self->{_memory}}, 0, scalar(@bytes), @bytes);
     return $self;
 }
