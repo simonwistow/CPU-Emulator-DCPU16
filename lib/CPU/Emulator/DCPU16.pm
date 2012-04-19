@@ -69,16 +69,153 @@ sub _init {
     
 }
 
-=head2 cost
+=head2 load <file>
 
-The current cost for this step
+Load an object file.
 
 =cut
-sub cost : lvalue {
-    my $self = shift;
-    $self->{_cost} = shift if @_;
-    $self->{_cost};
+sub load {
+    my $self  = shift;
+    my $bytes = shift; 
+    my %opts  = @_;
+    $self     = $self->new(%opts) unless ref($self);
+    $self->_init;
+    my @bytes = $self->bytes_to_array($bytes);
+    die "No program was loaded\n" unless @bytes;
+    $self->{_program_top} = scalar(@bytes);
+    splice(@{$self->{_memory}}, 0, scalar(@bytes), @bytes);
+    return $self;
 }
+
+=head2 bytes_to_array <bytes>
+
+Turn a scalar of bytes into an array of words
+
+=cut
+sub bytes_to_array {
+    my $class = shift;
+    my $bytes = shift;
+    my @ret;
+    while (my $word = substr($bytes, 0, 2, '')) {
+        push @ret, ord($word) * 2**8 + ord(substr($word, 1, 1));
+    }
+    @ret;
+}
+
+=head2 run [opt[s]]
+
+Run CPU until completion.
+
+Options available are:
+
+=over 4
+
+=item debug 
+
+Whether or not we should print debug information and at what level. 
+
+Default is 0 (no debug output).
+
+=item limit
+
+Maxinum number of instructions to execute.
+
+Default is 0 (no limit).
+
+=item cycle_penalty
+
+The time penalty for each instruction cycle in milliseconds.
+
+Default is 0 (no penalty)
+
+=item full_memory
+
+Allow the PC to continue past the last instruction of the program (i.e the program_top). 
+
+This would allow programs to rewrite themselves into a larger program.
+
+Default is 0 (no access)
+
+=back
+
+=cut
+sub run {
+    my $self       = shift;
+    my %opts       = @_;
+    my $count      = 1;
+    $opts{limit} ||= 0;
+    
+    $self->_debug($self->_dump_header) if $opts{debug}>=1;
+    
+    do { 
+        $self->step(%opts);
+        $self->halt = 1 if $opts{limit}>0 and ++$count>$opts{limit};
+        $self->halt = 1 if $self->pc >= $self->program_top && !$opts{full_memory};
+    } until $self->halt;
+}
+
+=head2 halt [halt state]
+
+Halt the CPU or check to see whether it's halted.
+
+=cut
+sub halt : lvalue {
+    my $self = shift;
+    $self->{_halt} = shift if @_;
+    $self->{_halt};
+}
+
+
+
+=head2 step [opt[s]]
+
+Run a single clock cycle of the CPU.
+
+Takes the same options as C<run>.
+    
+=cut
+sub step {
+    my $self = shift;
+    my %opts = @_;
+    
+    $opts{debug}         ||= 0;
+    $opts{cycle_penalty} ||= 0;
+    $self->_debug($self->_dump_state) if $opts{debug}>=1;
+  
+    my $pc   = $self->pc;
+    my $word = $self->memory($self->pc);
+    die "Unknown memory at PC ".sprintf("0x%04x",$self->pc)."\n" unless defined $word;
+    my $op   = $word & 0x0F; 
+    my $a    = ($word >> 4) & 0x3f;
+    my $b    = ($word >> 10) & 0x3f;
+
+    $self->pc  += 1;
+    $self->o    = 0;
+    
+    my $cost = 0;
+    
+    my $meth;
+    # Basic opcodes
+    if ($op) {
+        $meth = qw(NOOP _SET _ADD _SUB _MUL _DIV _MOD _SHL _SHR _AND _BOR _XOR _IFE _IFN _IFG _IFB)[$op];
+        die "Illegal opcode $op\n" unless defined $meth;   
+    # Defined non-basic opcodes
+    } elsif ($a == 0x01) {
+        $meth = "_JSR";
+    # Reserved non-basic opcodes
+    } else {
+        die "Illegal extended opcode $a\n";
+    }
+
+    my $aa = $self->_get_value($a, \$cost);
+    my $bb = $self->_get_value($b, \$cost);
+    
+    $self->$meth($aa, $bb, \$cost);
+    select(undef, undef, undef, $cost*$opts{cycle_penalty}/1000) if $opts{cycle_penalty}>0;
+    return $cost;
+}
+
+=head1 METHODS TO GET THE STATE OF THE CPU
 
 =head2 pc
 
@@ -162,151 +299,6 @@ sub _mem_ref {
     my $loc  = shift; 
     die "Invalid memory $loc at pc ".$self->pc." (".sprintf("%02x", $self->pc).")\n" if $loc<0 || $loc>=$MAX_MEMORY;
     \($self->{_memory}[$loc]);
-}
-
-
-=head2 run [opt[s]]
-
-Run CPU until completion.
-
-Options available are:
-
-=over 4
-
-=item debug 
-
-Whether or not we should print debug information and at what level. 
-
-Default is 0 (no debug output).
-
-=item limit
-
-Maxinum number of instructions to execute.
-
-Default is 0 (no limit).
-
-=item cycle_penalty
-
-The time penalty for each instruction cycle in milliseconds.
-
-Default is 0 (no penalty)
-
-=item full_memory
-
-Allow the PC to continue past the last instruction of the program (i.e the program_top). 
-
-This would allow programs to rewrite themselves into a larger program.
-
-Default is 0 (no access)
-
-=back
-
-=cut
-sub run {
-    my $self       = shift;
-    my %opts       = @_;
-    my $count      = 1;
-    $opts{limit} ||= 0;
-    
-    $self->_debug($self->_dump_header) if $opts{debug}>=1;
-    
-    do { 
-        $self->step(%opts);
-        $self->halt = 1 if $opts{limit}>0 and ++$count>$opts{limit};
-        $self->halt = 1 if $self->pc >= $self->program_top && !$opts{full_memory};
-    } until $self->halt;
-}
-
-=head2 halt [halt state]
-
-Halt the CPU or check to see whether it's halted.
-
-=cut
-sub halt : lvalue {
-    my $self = shift;
-    $self->{_halt} = shift if @_;
-    $self->{_halt};
-}
-
-=head2 load <file>
-
-Load an object file.
-
-=cut
-sub load {
-    my $self  = shift;
-    my $bytes = shift; 
-    my %opts  = @_;
-    $self     = $self->new(%opts) unless ref($self);
-    $self->_init;
-    my @bytes = $self->bytes_to_array($bytes);
-    die "No program was loaded\n" unless @bytes;
-    $self->{_program_top} = scalar(@bytes);
-    splice(@{$self->{_memory}}, 0, scalar(@bytes), @bytes);
-    return $self;
-}
-
-=head2 bytes_to_array <bytes>
-
-Turn a scalar of bytes into an array of words
-
-=cut
-sub bytes_to_array {
-    my $class = shift;
-    my $bytes = shift;
-    my @ret;
-    while (my $word = substr($bytes, 0, 2, '')) {
-        push @ret, ord($word) * 2**8 + ord(substr($word, 1, 1));
-    }
-    @ret;
-}
-
-=head2 step [opt[s]]
-
-Run a single clock cycle of the CPU.
-
-Takes the same options as C<run>.
-    
-=cut
-sub step {
-    my $self = shift;
-    my %opts = @_;
-    
-    $opts{debug}         ||= 0;
-    $opts{cycle_penalty} ||= 0;
-    $self->_debug($self->_dump_state) if $opts{debug}>=1;
-  
-    my $pc   = $self->pc;
-    my $word = $self->memory($self->pc);
-    die "Unknown memory at PC ".sprintf("0x%04x",$self->pc)."\n" unless defined $word;
-    my $op   = $word & 0x0F; 
-    my $a    = ($word >> 4) & 0x3f;
-    my $b    = ($word >> 10) & 0x3f;
-
-    $self->pc  += 1;
-    $self->o    = 0;
-    
-    my $cost = 0;
-    
-    my $meth;
-    # Basic opcodes
-    if ($op) {
-        $meth = qw(NOOP _SET _ADD _SUB _MUL _DIV _MOD _SHL _SHR _AND _BOR _XOR _IFE _IFN _IFG _IFB)[$op];
-        die "Illegal opcode $op\n" unless defined $meth;   
-    # Defined non-basic opcodes
-    } elsif ($a == 0x01) {
-        $meth = "_JSR";
-    # Reserved non-basic opcodes
-    } else {
-        die "Illegal extended opcode $a\n";
-    }
-
-    my $aa = $self->_get_value($a, \$cost);
-    my $bb = $self->_get_value($b, \$cost);
-    
-    $self->$meth($aa, $bb, \$cost);
-    select(undef, undef, undef, $cost*$opts{cycle_penalty}/1000) if $opts{cycle_penalty}>0;
-    return $cost;
 }
 
 sub _dump_header {
@@ -516,7 +508,7 @@ L<CPU::Emulator::DCPU16::Disassembler>
 
 =head1 ACKNOWLEDGEMENTS
 
-I've taken implementation inspiration from:
+Implementation inspiration came from:
 
 =over 4
 
