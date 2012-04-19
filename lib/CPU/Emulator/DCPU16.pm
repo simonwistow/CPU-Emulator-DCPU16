@@ -69,9 +69,18 @@ sub _init {
     
 }
 
-=head2 load <file>
+=head2 load <program> [opt[s]]
 
-Load an object file.
+Load a program. Forces as re-init of the CPU.
+
+You can also do
+
+    my $cpu = CPU::Emulator::DCPU16->load($program, %opts);
+    
+which is exactly the same as
+
+    my $cpu = CPU::Emulator::DCPU16->new(%opts);
+    $cpu->load($program);
 
 =cut
 sub load {
