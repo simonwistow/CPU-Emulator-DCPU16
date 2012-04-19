@@ -162,19 +162,6 @@ sub run {
     } until $self->halt;
 }
 
-=head2 halt [halt state]
-
-Halt the CPU or check to see whether it's halted.
-
-=cut
-sub halt : lvalue {
-    my $self = shift;
-    $self->{_halt} = shift if @_;
-    $self->{_halt};
-}
-
-
-
 =head2 step [opt[s]]
 
 Run a single clock cycle of the CPU.
@@ -256,6 +243,17 @@ sub o : lvalue {
     my $self = shift;
     $self->{_o} = shift if @_;
     $self->{_o};
+}
+
+=head2 halt [halt state]
+
+Halt the CPU or check to see whether it's halted.
+
+=cut
+sub halt : lvalue {
+    my $self = shift;
+    $self->{_halt} = shift if @_;
+    $self->{_halt};
 }
 
 =head2 program_top
