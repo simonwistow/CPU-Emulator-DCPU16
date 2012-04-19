@@ -152,7 +152,7 @@ sub run {
     my %opts       = @_;
     my $count      = 1;
     $opts{limit} ||= 0;
-    
+    $opts{debug} ||= 0;
     $self->_debug($self->_dump_header) if $opts{debug}>=1;
     
     do { 
