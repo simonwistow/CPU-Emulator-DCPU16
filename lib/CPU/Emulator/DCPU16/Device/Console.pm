@@ -47,7 +47,7 @@ Get the value at address of the mapped device.
 sub get {
     my $self = shift;
     my $addr = shift;
-    substr $self->{_console}, $addr-$self->start, 1;
+    ord substr $self->{_console}, $addr-$self->start, 1;
 }
 
 =head2 tick 
@@ -59,7 +59,7 @@ Prints out the current console.
 =cut
 sub tick {
     my $self = shift;
-    print "\r".$self->{_console};
+    print "\r".$self->{_console} if defined $self->{_console};
 }
 
 sub DESTROY {
