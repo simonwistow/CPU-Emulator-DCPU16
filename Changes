@@ -1,0 +1,7 @@
+v0.2 2012-04-19
+
+Add devices and a simple console device.
+
+v0.1 2012-04-18
+
+Initial release. Complete with Emulator, Assembler, Disassembler and tests.
