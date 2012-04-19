@@ -1,7 +1,9 @@
+bin/dcpu16
 Build.PL
-examples/simple.dasm
+examples/simple.dasm16
 examples/simple.do
 examples/spec.dasm
+examples/spec.do
 lib/CPU/Emulator/DCPU16.pm
 lib/CPU/Emulator/DCPU16/Assembler.pm
 lib/CPU/Emulator/DCPU16/Disassembler.pm
@@ -15,3 +17,4 @@ t/01_assemble.t
 t/02_run.t
 t/pod.t
 t/pod_coverage.t
+TODO
