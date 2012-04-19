@@ -514,6 +514,20 @@ L<CPU::Emulator::DCPU16::Assembler>
 
 L<CPU::Emulator::DCPU16::Disassembler>
 
+=head1 ACKNOWLEDGEMENTS
+
+I've taken implementation inspiration from:
+
+=over 4
+
+=item Matt Bell's Javascript implementation (https://github.com/mappum/DCPU-16)
+
+=item Brian Swetland's C Implementation (https://github.com/swetland/dcpu16)
+
+=item Jesse Luehrs's Perl Implementation (https://github.com/doy/games-emulation-dcpu16)
+
+=back
+
 =head1 AUTHOR
 
 Simon Wistow <simon@thegestalt.org>
