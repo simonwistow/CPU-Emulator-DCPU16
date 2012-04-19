@@ -6,7 +6,9 @@ use warnings;
 use CPU::Emulator::DCPU16::Assembler;
 use CPU::Emulator::DCPU16::Disassembler;
 
-our $VERSION       = 0.1;
+use CPU::Emulator::DCPU16::Device::Console;
+
+our $VERSION       = 0.2;
 our $MAX_REGISTERS = 8;
 our $MAX_MEMORY    = 65536; # 0x10000
 
@@ -62,6 +64,8 @@ sub _init {
     $self->sp   = 0xffff;
     $self->o    = 0;
     
+    $self->{_devices}   = [];
+    
     # TODO these could be done with scalars and bit masks
     $self->{_registers} = [(0x0000) x $MAX_REGISTERS],
     $self->{_memory}    = [(0x0000) x $MAX_MEMORY],
@@ -108,6 +112,21 @@ sub bytes_to_array {
         push @ret, ord($word) * 2**8 + ord(substr($word, 1, 1));
     }
     @ret;
+}
+
+=head2 map_device <class> <start address> <end address> [opt[s]]
+
+Map a device of the given class to these addresses
+
+=cut
+sub map_device {
+    my $self  = shift;
+    my $dev   = shift;
+    my $start = shift;
+    my $end   = shift;
+    my %opts  = @_;
+    push @{$self->{_devices}}, $dev->new($self->{_memory}, $start, $end, %opts);
+    $self->{_devices}->[-1];
 }
 
 =head2 run [opt[s]]
@@ -207,6 +226,7 @@ sub step {
     
     $self->$meth($aa, $bb, \$cost);
     select(undef, undef, undef, $cost*$opts{cycle_penalty}/1000) if $opts{cycle_penalty}>0;
+    $_->tick for @{$self->{_devices}};
     return $cost;
 }
 
