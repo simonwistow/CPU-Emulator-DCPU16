@@ -138,9 +138,9 @@ sub _parse_operand {
         return (0x08 + index $regs, uc($1));
     } elsif ($op =~ /^\[\s*($nums)\s*\+\s*([$regs])\s*\]$/) {
         return (0x10 + index($regs, uc($2)), _parse_num($1));
-    } elsif ($op eq 'POP') {
+    } elsif ($op eq 'POP' || $op =~ /^\[\s*SP\+\+\s*\]$/) {
         return (0x18);
-    } elsif ($op eq 'PEEK' || $op =~ /^\[\s*SP\s*\]$/) {
+    } elsif ($op eq 'PEEK' || $op =~ /^\[\s*\-\-SP\s*\]$/) {
         return (0x19);
     } elsif ($op eq 'PUSH') {
         return (0x1a);
