@@ -8,7 +8,7 @@ use CPU::Emulator::DCPU16::Disassembler;
 
 use CPU::Emulator::DCPU16::Device::Console;
 
-our $VERSION       = 0.2;
+our $VERSION       = 0.3;
 our $MAX_REGISTERS = 8;
 our $MAX_MEMORY    = 65536; # 0x10000
 

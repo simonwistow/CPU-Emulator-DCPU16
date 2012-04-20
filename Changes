@@ -1,3 +1,7 @@
+v0.3 2012-04-19
+
+Fix number parsing in the assembler again.
+
 v0.2 2012-04-19
 
 Add devices and a simple console device.
