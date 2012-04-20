@@ -1,1 +1,7 @@
 - The emulator is ugly
+- Write a Display device (see http://0x10co.de/io)
+- Better support for DAT ("commas, in, values" "quotes in \"values\"");
+- Profile and speed up
+- Loadable opcodes?
+- Assembler back ends (x86, LLVM, Java)
+
