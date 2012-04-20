@@ -73,22 +73,37 @@ sub _parse_line {
     $line =~ s!(^\s*|\s*$|;.*$)!!g;
     return unless length($line);
 
-    my ($label, $op, $a, $b) = $line =~ m!
+    my ($label, $op, $operands) = $line =~ m!
         ^
         (?::(\w+)      \s+)? # optional label
         ([A-Za-z]+)    \s+   # opcode
-        ([^,\s]+) (?:, \s+   # operand
-        ([^,\s]+))?    \s*   # optional second opcode
+        (.+)           \s*   # operands
         $
     !x;
+    # TODO this won't cope with commas inside quotes e.g DAT 0x20, "hello, goodbye", 0x10
+    my @operands = split /\s*,\s*/, ($operands || "");
+    
     
     die "Couldn't parse line $idx: $line\n" unless defined $op;
     
     $labels->{$label} = $off if defined $label;
     
     $op = uc $op;
-    if ($oc = $_EXTENDED_OPS{$op}) {
-        die "$op takes one operand at line $idx: $line\n" unless defined $a && !defined $b;
+    if ($op eq "DAT") {
+        die "$op needs at least operand at line $idx: $line\n" unless @operands;
+        my @words;
+        foreach my $op (@operands) {
+            # TODO this won't cope with quotes inside quotes e.g DAT 0x20, "hello \"kitty\"", 0x10
+            if ($op=~ m!^"([^"]*)"$!) {
+                push @words, $_ for unpack "C*", $1;
+            } else {
+                push @words, _parse_num($op);
+            }
+        }
+        $$bytes .= pack("S>", $_) for @words;
+    } elsif ($oc = $_EXTENDED_OPS{$op}) {
+        my $a = shift @operands;
+        die "$op takes one operand at line $idx: $line\n" unless defined $a && !@operands;
         my ($val, $next_word, $label) = _parse_operand($a);
         die "Can't parse operand '$a' at line $idx: $line\n" unless defined $val;
 
@@ -98,22 +113,23 @@ sub _parse_line {
         $unres->{$off} = [$label] if defined $label;
         $$bytes .= pack("S>", $oc);
         $$bytes .= pack("S>", $next_word) if defined $next_word;
-
     } elsif ($oc = $_OPS{$op}) {
-         die "$op takes two operands at line $idx: $line\n" unless defined $a && defined $b;
-       
-         my ($val_a, $next_word_a, $label_a) = _parse_operand($a);
-         die "Can't parse operand '$a' at line $idx: $line\n" unless defined $val_a;
-         my ($val_b, $next_word_b, $label_b) = _parse_operand($b);
-         die "Can't parse operand '$b' at line $idx: $line\n" unless defined $val_b;
+        my $a = shift @operands;
+        my $b = shift @operands;
+        die "$op takes two operands at line $idx: $line\n" unless defined $a && defined $b && !@operands;
 
-         $oc |= $val_a << 4;
-         $oc |= $val_b << 10;
-         $unres->{$off} = [$label_a, $label_b] if defined $label_a || defined $label_b;
-         
-         $$bytes .= pack("S>", $oc);
-         $$bytes .= pack("S>", $next_word_a) if defined $next_word_a;
-         $$bytes .= pack("S>", $next_word_b) if defined $next_word_b;
+        my ($val_a, $next_word_a, $label_a) = _parse_operand($a);
+        die "Can't parse operand '$a' at line $idx: $line\n" unless defined $val_a;
+        my ($val_b, $next_word_b, $label_b) = _parse_operand($b);
+        die "Can't parse operand '$b' at line $idx: $line\n" unless defined $val_b;
+
+        $oc |= $val_a << 4;
+        $oc |= $val_b << 10;
+        $unres->{$off} = [$label_a, $label_b] if defined $label_a || defined $label_b;
+ 
+        $$bytes .= pack("S>", $oc);
+        $$bytes .= pack("S>", $next_word_a) if defined $next_word_a;
+        $$bytes .= pack("S>", $next_word_b) if defined $next_word_b;
     } else {
         die "Unknown opcode $op at line $idx: $line\n";
     }

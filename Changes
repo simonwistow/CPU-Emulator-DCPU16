@@ -1,3 +1,8 @@
+v0.4 ????-??-??
+
+Disassembler creates actual labels now
+Add support for the DAT opcode
+
 v0.3 2012-04-19
 
 Fix number parsing in the assembler again.
