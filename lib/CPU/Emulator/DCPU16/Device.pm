@@ -83,6 +83,12 @@ sub get {
     # no-op
 }
 
+# TODO it's possible this should be in a 
+# CPU::Emulator::DCPU16::DeviceProxy package
+# that way DESTROY would only get called once
+# in which case the $class in new() would need 
+# to be changed
+
 sub TIESCALAR {
     my $class = shift;
     my $addr  = shift;
