@@ -4,6 +4,7 @@ use Module::Build;
 my $build = Module::Build
   ->new( module_name        => "CPU::Emulator::DCPU16",
          license            => 'perl',
+         script_files       => [ 'bin/dcpu16' ],
          configure_requires => { 
                                 'Module::Build'   => 0.38 
                                },
