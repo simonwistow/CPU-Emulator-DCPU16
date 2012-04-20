@@ -99,9 +99,10 @@ sub dump {
     while ($pc < scalar(@words)) {
         my ($tmp, $new_pc) = $class->disassemble($pc, @words);
         if ($tmp =~ /^(JSR|SET PC,)\s*(.+)$/) {
-            my $addr = "$2";
-            # TODO potentially replace faux address labels with generated ones
-            $labels{hex($addr)} = $addr if $addr =~ /^0x/; 
+            my $addr  = "$2";
+            my $label = "LB$addr";
+            $tmp =~ s/^(JSR|SET PC,)\s*(.+)$/$1 $label/;
+            $labels{hex($addr)} = $label if $addr =~ /^0x/; 
         }
         $lines{$pc} = $tmp;
         $pc         = $new_pc;
